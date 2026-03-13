@@ -3,7 +3,7 @@ import os
 from parsers.pdf_parser import parse_pdf
 from parsers.docx_parser import parse_docx
 from parsers.csv_parser import parse_csv
-
+from parsers.pptx_parser import parse_pptx
 def parse_file(file_path):
 
     ext = os.path.splitext(file_path)[1]
@@ -16,6 +16,8 @@ def parse_file(file_path):
 
     elif ext == ".csv":
         return parse_csv(file_path)
+    elif ext == ".pptx":
+        return parse_pptx(file_path)
 
     else:
         raise ValueError("Unsupported file format")
