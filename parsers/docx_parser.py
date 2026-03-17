@@ -1,12 +1,21 @@
+from pathlib import Path
+
 import docx
 
-def parse_docx(file_path):
 
-    doc = docx.Document(file_path)
+def parse_docx(file_path: str | Path) -> str:
+    """Extract text from paragraphs and table cells of a DOCX file."""
+    doc = docx.Document(str(file_path))
+    chunks: list[str] = []
 
-    text = ""
+    for paragraph in doc.paragraphs:
+        if paragraph.text.strip():
+            chunks.append(paragraph.text.strip())
 
-    for para in doc.paragraphs:
-        text += para.text
+    for table in doc.tables:
+        for row in table.rows:
+            row_values = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if row_values:
+                chunks.append(" | ".join(row_values))
 
-    return text
+    return "\n".join(chunks).strip()
