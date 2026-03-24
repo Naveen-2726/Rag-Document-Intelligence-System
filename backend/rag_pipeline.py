@@ -1,16 +1,26 @@
 import os
+import logging
 
+from tenacity import retry, wait_exponential, stop_after_attempt
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 
-from backend.vector_store import load_vector_store, require_openai_api_key
+from backend.vector_store import load_vector_store
+
+logger = logging.getLogger(__name__)
 
 
-def load_rag() -> ChatOpenAI:
-    """Create and return the chat model used in the RAG pipeline."""
-    require_openai_api_key()
-    return ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+def load_rag() -> ChatGroq:
+    """Create and return the Groq chat model used in the RAG pipeline."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "GROQ_API_KEY is not set. Add it to your .env file or environment variables."
+        )
+    model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    return ChatGroq(
+        model=model,
+        api_key=api_key,
         temperature=0,
     )
 
@@ -46,8 +56,21 @@ def ask_question(query: str, k: int = 4) -> dict:
 
     model = load_rag()
     prompt = _build_prompt(query=query, context=context)
-    response = model.invoke(prompt)
-    answer = response.content if hasattr(response, "content") else str(response)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
+    def invoke_model():
+        return model.invoke(prompt)
+
+    try:
+        response = invoke_model()
+        answer = response.content if hasattr(response, "content") else str(response)
+    except Exception as exc:
+        logger.error(f"Error invoking Groq model after retries: {exc}")
+        raise
 
     sources: list[str] = []
 

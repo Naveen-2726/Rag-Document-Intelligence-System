@@ -1,28 +1,28 @@
 import os
 from pathlib import Path
+from functools import lru_cache
 
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 VECTOR_DB_DIR = PROJECT_ROOT / "vector_db"
 
 
-def require_openai_api_key() -> None:
-    """Validate OpenAI API key presence before embedding/LLM calls."""
-    if not os.getenv("OPENAI_API_KEY"):
-        raise EnvironmentError(
-            "OPENAI_API_KEY is not set. In PowerShell run: "
-            "$env:OPENAI_API_KEY=\"your_api_key\""
-        )
+@lru_cache(maxsize=1)
+def get_embeddings_model() -> HuggingFaceEmbeddings:
+    """Create and return a cached singleton HuggingFace embeddings model.
 
-
-def get_embeddings_model() -> OpenAIEmbeddings:
-    """Create and return the embeddings model used by the vector store."""
-    require_openai_api_key()
-    embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    return OpenAIEmbeddings(model=embedding_model)
+    The model is loaded once and reused across all requests, saving ~2-3s
+    per operation that would otherwise be spent on model initialization.
+    """
+    model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    return HuggingFaceEmbeddings(
+        model_name=model_name,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True, "batch_size": 64},
+    )
 
 
 def load_vector_store() -> FAISS | None:
@@ -66,3 +66,13 @@ def create_vector_store(documents: list[Document]) -> FAISS:
 
     current_store.save_local(str(VECTOR_DB_DIR))
     return current_store
+
+
+def delete_vector_store() -> bool:
+    """Delete the persisted FAISS index from disk. Returns True if deleted."""
+    import shutil
+    if VECTOR_DB_DIR.exists():
+        shutil.rmtree(VECTOR_DB_DIR)
+        VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
+        return True
+    return False
